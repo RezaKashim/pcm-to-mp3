@@ -1,9 +1,3 @@
 {
-  "version": 2,
-  "functions": {
-    "api/convert.js": {
-      "memory": 512,
-      "maxDuration": 10
-    }
-  }
+  "version": 2
 }
