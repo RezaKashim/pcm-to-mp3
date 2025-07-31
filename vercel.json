@@ -2,7 +2,8 @@
   "version": 2,
   "functions": {
     "api/convert.js": {
-      "runtime": "edge"
+      "memory": 512,
+      "maxDuration": 10
     }
   }
 }
