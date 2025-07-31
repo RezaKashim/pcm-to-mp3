@@ -1,34 +1,41 @@
-import { createFFmpeg, fetchFile } from '@ffmpeg/ffmpeg';
+const ffmpegPath = require('ffmpeg-static');
+const ffmpeg = require('fluent-ffmpeg');
+const { Readable } = require('stream');
+const { writeFileSync, unlinkSync } = require('fs');
+const { tmpdir } = require('os');
+const { join } = require('path');
 
-export const config = {
-  runtime: 'edge',
-};
-
-export default async function handler(req) {
+module.exports = async (req, res) => {
   if (req.method !== 'POST') {
-    return new Response('Only POST supported', { status: 405 });
+    return res.status(405).send('Only POST supported');
   }
 
-  const ffmpeg = createFFmpeg({ log: true });
-  await ffmpeg.load();
+  const buffer = [];
+  for await (const chunk of req) buffer.push(chunk);
+  const pcmData = Buffer.concat(buffer);
 
-  const buffer = await req.arrayBuffer();
-  ffmpeg.FS('writeFile', 'input.pcm', new Uint8Array(buffer));
+  const inputPath = join(tmpdir(), `input-${Date.now()}.pcm`);
+  const outputPath = join(tmpdir(), `output-${Date.now()}.mp3`);
 
-  await ffmpeg.run(
-    '-f', 's16le',
-    '-ar', '24000',
-    '-ac', '1',
-    '-i', 'input.pcm',
-    'output.mp3'
-  );
+  writeFileSync(inputPath, pcmData);
 
-  const mp3Data = ffmpeg.FS('readFile', 'output.mp3');
-
-  return new Response(mp3Data.buffer, {
-    headers: {
-      'Content-Type': 'audio/mpeg',
-      'Content-Disposition': 'inline; filename="output.mp3"'
-    }
-  });
-}
+  ffmpeg()
+    .setFfmpegPath(ffmpegPath)
+    .input(inputPath)
+    .inputFormat('s16le')
+    .audioFrequency(24000)
+    .audioChannels(1)
+    .on('end', () => {
+      const mp3Buffer = require('fs').readFileSync(outputPath);
+      unlinkSync(inputPath);
+      unlinkSync(outputPath);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Content-Disposition', 'inline; filename="output.mp3"');
+      res.send(mp3Buffer);
+    })
+    .on('error', err => {
+      console.error(err);
+      res.status(500).send('Conversion failed');
+    })
+    .save(outputPath);
+};
