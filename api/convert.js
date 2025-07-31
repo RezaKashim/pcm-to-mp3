@@ -18,35 +18,40 @@ module.exports = async (req, res) => {
     const outputPath = join(tmpdir(), `output-${Date.now()}.mp3`);
 
     fs.writeFileSync(inputPath, buffer);
+    console.log('[convert] Input PCM written:', inputPath);
 
-    console.log('[convert] Running ffmpeg...');
-    ffmpeg()
+    const command = ffmpeg()
       .setFfmpegPath(ffmpegPath)
       .input(inputPath)
-      .inputFormat('s16le')
+      .inputFormat('s16le') // PCM signed 16-bit little-endian
       .audioFrequency(24000)
       .audioChannels(1)
       .audioCodec('libmp3lame')
-      .outputOptions('-ar', '24000') // Set output sample rate too
-      .on('start', (cmd) => console.log('[ffmpeg] Start:', cmd))
-      .on('stderr', (line) => console.log('[ffmpeg] stderr:', line))
-      .on('error', (err) => {
-        console.error('[ffmpeg] Error:', err);
-        res.status(500).send('Conversion failed');
+      .outputOptions('-ar', '24000')
+      .on('start', cmd => console.log('[ffmpeg] Started:', cmd))
+      .on('stderr', line => console.log('[ffmpeg] STDERR:', line))
+      .on('error', (err, stdout, stderr) => {
+        console.error('[ffmpeg] ERROR:', err.message);
+        console.error('[ffmpeg] STDOUT:', stdout);
+        console.error('[ffmpeg] STDERR:', stderr);
+        res.status(500).send('ffmpeg failed: ' + err.message);
       })
       .on('end', () => {
-        console.log('[ffmpeg] Done.');
+        console.log('[ffmpeg] Conversion completed.');
         const mp3 = fs.readFileSync(outputPath);
+        console.log('[convert] Output MP3 size:', mp3.length);
+
         fs.unlinkSync(inputPath);
         fs.unlinkSync(outputPath);
 
         res.setHeader('Content-Type', 'audio/mpeg');
         res.setHeader('Content-Disposition', 'inline; filename="output.mp3"');
         res.send(mp3);
-      })
-      .save(outputPath);
+      });
+
+    command.save(outputPath);
   } catch (err) {
-    console.error('[convert] Handler error:', err);
-    res.status(500).send('Unexpected error');
+    console.error('[convert] Unexpected error:', err);
+    res.status(500).send('Unexpected server error');
   }
 };
